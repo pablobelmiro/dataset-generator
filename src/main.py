@@ -38,14 +38,11 @@ def main():
     for xml_file in input_files:
         try:
             tree = processor.ingest_xml(str(xml_file))
-            
-            # Dynamic Step: Analyze file to create mapping
+            doc_type = processor.detect_document_type(tree)
             file_mapping = mapper.analyze_root(tree.getroot())
-            # print(f"   [Debug] Mapping for {xml_file.name}: {file_mapping}")
-            
             template_str = processor.create_template(tree, file_mapping)
-            templates.append(Template(template_str))
-            print(f" - Processed {xml_file.name} (Mapped {len(file_mapping)} tags)")
+            templates.append((Template(template_str), doc_type))
+            print(f" - Processed {xml_file.name} [{doc_type}] (Mapped {len(file_mapping)} tags)")
         except Exception as e:
             print(f"Error processing {xml_file}: {e}")
 
@@ -63,17 +60,25 @@ def main():
         return val if val is not None else "UNKNOWN"
 
     for i in range(args.count):
-        # Pick a random template
-        template = random.choice(templates)
-        
-        # Context with our generator function
-        context = {'gen': generate_wrapper}
-        
-        # Render
+        template, doc_type = random.choice(templates)
+
+        # Snapshot all entity categories so every field in the same category
+        # (e.g. all emit/company fields) returns values from the same object.
+        factory.new_document_context()
+
+        # Generate a single NF-e access key per document so that cUF, cNF,
+        # nNF, serie, cDV and the Id attribute are all mutually consistent.
+        nfe_key = factory.generate_nfe_key()
+
+        context = {'gen': generate_wrapper, 'nfe': nfe_key}
         rendered_xml = template.render(context)
-        
-        # Save
-        filename = f"generated_{i+1:04d}.xml"
+
+        # Fix mathematical inconsistencies: vProd = qCom × vUnCom,
+        # totals in ICMSTot, billing and payment amounts.
+        rendered_xml = processor.post_process_financial(rendered_xml)
+
+        suffix = 'can' if doc_type == 'cancellation' else 'nfe'
+        filename = f"generated_{i+1:04d}-{suffix}.xml"
         output_path = OUTPUT_DIR / filename
         
         with open(output_path, 'w', encoding='utf-8') as f:
