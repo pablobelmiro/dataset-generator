@@ -1,7 +1,11 @@
 import os
+import sys
 import random
 import argparse
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from jinja2 import Template
 from src.xml_processor import XMLProcessor
 from src.data_generator import DataFactory
